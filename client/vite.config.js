@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [vue()],
+  base: './', // Relative asset paths, so dist/ loads as a Chrome extension.
   server: {
     // Keep the target in sync with PORT in server/index.js.
     proxy: { '/api': 'http://localhost:3001' },

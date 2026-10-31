@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "AccessFix",
+  "version": "0.1.0",
+  "description": "Scan a website for accessibility issues, fix them, and see the score change for each disability group.",
+  "action": {
+    "default_title": "Open AccessFix"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": [
+    "http://localhost:3001/*"
+  ]
+}

@@ -18,6 +18,19 @@ Open http://localhost:5173, enter any URL and click **Scan**. A mock scan takes 
 
 The API runs on http://localhost:3001, and Vite proxies `/api` to it. To change the port, update both `server/index.js` and `client/vite.config.js`.
 
+## Run as a Chrome extension
+
+```bash
+npm run build
+npm run dev -w server   # The extension needs the API running on port 3001
+```
+
+1. Open `chrome://extensions` and turn on **Developer mode**.
+2. Click **Load unpacked** and choose `client/dist`.
+3. Click the AccessFix toolbar icon to open the app in a new tab.
+
+After changing the client, run `npm run build` again and click reload on the extension card. The manifest is `client/public/manifest.json`. It only allows the API at `localhost:3001`, so a hosted API needs a new entry in `host_permissions` and a change to `API_BASE` in `client/src/api.js`.
+
 ## Folder map
 
 | Folder | Teammate area | What it does |
