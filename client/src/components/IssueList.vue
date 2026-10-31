@@ -1,96 +1,216 @@
 <script setup>
 import { computed } from 'vue';
-import { FINDING_TYPE_LABELS, GROUP_LABELS, GROUP_NOTES, GROUPS } from '../groups.js';
+import { GROUP_LABELS, GROUPS } from '../groups.js';
 
 const props = defineProps({
-  findings: { type: Array, required: true },
-  reducedMotionQuery: { type: String, default: '' },
+  issues: { type: Array, required: true },
 });
 
 const groupedFindings = computed(() =>
   GROUPS.map((group) => ({
     group,
     label: GROUP_LABELS[group],
-    note: GROUP_NOTES[group],
-    findings: props.findings.filter((finding) => finding.area === group),
-  })),
+    issues: props.issues.filter((issue) => issue.group === group),
+  })).filter((entry) => entry.issues.length > 0),
 );
-
-const REDUCED_MOTION_NOTES = {
-  found: 'The page\'s readable CSS mentions prefers-reduced-motion.',
-  'not-found': 'The page\'s CSS does not mention prefers-reduced-motion.',
-  'unknown-cross-origin-css': 'Some stylesheets could not be read, so support for prefers-reduced-motion is unknown.',
-};
 </script>
 
 <template>
   <section class="card" aria-labelledby="issues-heading">
-    <h2 id="issues-heading">Findings ({{ findings.length }})</h2>
-    <p v-if="findings.length === 0">
-      These checks found nothing. That does not mean the page is accessible: most accessibility issues need a person
-      to find them.
-    </p>
-
-    <div v-for="entry in groupedFindings" :key="entry.group" class="issue-group">
-      <h3>{{ entry.label }} ({{ entry.findings.length }})</h3>
-      <p class="issue-meta">{{ entry.note }}</p>
-      <p v-if="entry.group === 'motion' && REDUCED_MOTION_NOTES[reducedMotionQuery]" class="issue-meta">
-        {{ REDUCED_MOTION_NOTES[reducedMotionQuery] }}
-      </p>
-
+    <h2 id="issues-heading">Issues ({{ issues.length }})</h2>
+    <div v-for="entry in groupedIssues" :key="entry.group" class="issue-group">
+      <h3>{{ entry.label }} ({{ entry.issues.length }})</h3>
       <ul class="issue-list">
-        <li v-for="finding in entry.findings" :key="finding.id">
+        <li v-for="issue in entry.issues" :key="issue.id">
           <p class="issue-title">
-            <span :class="['badge', `type-${finding.findingType}`]">{{ FINDING_TYPE_LABELS[finding.findingType] }}</span>
+            <span :class="['badge', `severity-${issue.severity}`]">{{ issue.severity }}</span>
+            <span :class="['badge', issue.fixed ? 'state-fixed' : 'state-open']">
+              {{ issue.fixed ? 'Fixed' : 'Not fixed' }}
+            </span>
           </p>
-          <p>{{ finding.summary }}</p>
+          <p>{{ issue.description }}</p>
           <p class="issue-meta">
-            {{ finding.ruleId }} · <code>{{ finding.selector }}</code>
+            {{ issue.component }} · {{ issue.page }} · WCAG {{ issue.wcag }} ·
+            <code>{{ issue.selector }}</code>
           </p>
-          <p v-if="finding.evidence?.contrastRatio" class="issue-meta">
-            Measured contrast {{ finding.evidence.contrastRatio }}:1, required {{ finding.evidence.required }}:1
-            ({{ finding.evidence.foreground }} on {{ finding.evidence.background }})
-          </p>
-          <p v-if="finding.evidence?.colourDifference" class="issue-meta">
-            Difference from a similar element: {{ finding.evidence.colourDifference.normal }} normally,
-            {{ finding.evidence.colourDifference.deuteranopia }} under deuteranopia simulation,
-            {{ finding.evidence.colourDifference.protanopia }} under protanopia simulation (RGB distance).
-          </p>
-
-          <details v-if="finding.guidance">
-            <summary>Why this matters</summary>
-            <div v-for="need in finding.guidance.needs" :key="need.id">
-              <p>
-                <strong>{{ need.name }}.</strong> {{ need.description }}
-              </p>
-              <ul>
-                <li v-for="fix in need.fixes" :key="fix.id">
-                  {{ fix.title }}: {{ fix.description }}
-                  <em>{{ fix.adjustmentType ? '(can be previewed if supported here)' : '(needs a person)' }}</em>
-                </li>
-              </ul>
-            </div>
-            <p v-if="finding.guidance.guidelines.length" class="issue-meta">
-              <template v-for="(guideline, index) in finding.guidance.guidelines" :key="guideline.id">
-                <template v-if="index > 0"> · </template>
-                <a :href="guideline.url" target="_blank" rel="noreferrer">
-                  WCAG {{ guideline.id }} {{ guideline.title }} ({{ guideline.level }})</a>
-              </template>
-              <template v-if="finding.findingType !== 'automated_violation'">
-                (possibly relevant, not a confirmed failure)
-              </template>
-            </p>
-          </details>
-          <p v-else class="issue-meta">Why this matters: no guidance available, because no graph entry was retrieved.</p>
-
-          <div v-if="finding.ai" class="ai-note">
-            <p>
-              <strong>AI suggestion ({{ finding.ai.confidence }} confidence):</strong> {{ finding.ai.explanation }}
-            </p>
-            <p v-if="finding.ai.uncertainty" class="issue-meta">Still to check: {{ finding.ai.uncertainty }}</p>
-          </div>
         </li>
       </ul>
     </div>
-  </section>
+  </div>
 </template>
+
+<style scoped>
+.audit-records-view {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.records-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.records-title {
+  font-size: 1.6rem;
+  margin: 6px 0 4px;
+}
+
+.records-sub {
+  font-size: 0.9375rem;
+  color: var(--color-muted);
+  margin-bottom: 0;
+  max-width: 680px;
+}
+
+.filters-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filter-input {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  min-width: 260px;
+}
+
+.filter-select {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.issue-groups-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.issue-group-card {
+  padding: 24px;
+}
+
+.group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 12px;
+}
+
+.group-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.group-left h3 {
+  font-size: 1.15rem;
+  margin: 0;
+}
+
+.group-count {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.issues-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.issue-row-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.issue-row-item:hover {
+  background: #ffffff;
+  border-color: var(--color-obsidian);
+  box-shadow: var(--shadow-sm);
+}
+
+.issue-row-item.selected {
+  outline: 2px solid var(--color-brand);
+  background: var(--color-brand-light);
+}
+
+.row-status-badges {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 130px;
+}
+
+.row-body {
+  flex: 1;
+}
+
+.issue-desc {
+  font-size: 0.95rem;
+  margin: 0 0 6px 0;
+  line-height: 1.4;
+}
+
+.row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  flex-wrap: wrap;
+}
+
+.selector-tag {
+  color: var(--color-brand);
+}
+
+.btn-inspect {
+  background: transparent;
+  border: 0;
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--color-obsidian);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.empty-state-card {
+  padding: 32px;
+  text-align: center;
+  color: var(--color-muted);
+}
+
+@media (max-width: 768px) {
+  .issue-row-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+</style>

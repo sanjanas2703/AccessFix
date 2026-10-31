@@ -1,27 +1,22 @@
 <script setup>
-import { computed, onUnmounted, ref, watch } from 'vue';
-import { clearPreview, getScan, imageUrl, startPreview, startScan } from '../api.js';
-import AdjustmentPicker from '../components/AdjustmentPicker.vue';
+import { computed, onUnmounted, ref } from 'vue';
+import { getScan, startScan } from '../api.js';
 import BeforeAfter from '../components/BeforeAfter.vue';
-import IntegrationStatus from '../components/IntegrationStatus.vue';
+import IssueGraph from '../components/IssueGraph.vue';
 import IssueList from '../components/IssueList.vue';
 import SandboxLog from '../components/SandboxLog.vue';
-
-const props = defineProps({
-  suggestedUrl: { type: String, default: '' },
-});
+import ScoreRadar from '../components/ScoreRadar.vue';
 
 const POLL_MS = 1000;
 const STATUS_LABELS = {
   queued: 'Queued',
-  connecting: 'Connecting to the sandbox',
   scanning: 'Scanning',
-  retrieving: 'Retrieving guidance',
-  explaining: 'Explaining findings',
+  patching: 'Patching',
+  retesting: 'Re-testing',
   done: 'Done',
   failed: 'Failed',
 };
-const STAGES = ['queued', 'connecting', 'scanning', 'retrieving', 'explaining', 'done'];
+const STAGES = ['queued', 'scanning', 'patching', 'retesting', 'done'];
 
 const url = ref('');
 const scan = ref(null);
@@ -29,47 +24,50 @@ const error = ref('');
 const isRunning = ref(false);
 let pollTimer;
 
-watch(
-  () => props.suggestedUrl,
-  (value) => {
-    url.value = value;
-  },
-);
-
 const stageIndex = computed(() => STAGES.indexOf(scan.value?.status));
 const statusLabel = computed(() => STATUS_LABELS[scan.value?.status] ?? '');
-const previewBusy = computed(() => ['queued', 'running'].includes(scan.value?.preview?.status));
-const finished = computed(() => ['done', 'failed'].includes(scan.value?.status));
 
 function stopPolling() {
-  clearTimeout(pollTimer);
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
   isRunning.value = false;
 }
 
 async function poll(scanId) {
   try {
     scan.value = await getScan(scanId);
-    if (finished.value && !previewBusy.value) {
+    if (['done', 'failed'].includes(scan.value.status)) {
       stopPolling();
+      if (scan.value?.status === 'done') {
+        viewMode.value = 'workspace';
+        activeTab.value = 'overview';
+      }
       return;
     }
     pollTimer = setTimeout(() => poll(scanId), POLL_MS);
   } catch (err) {
-    error.value = err.message;
+    error.value = err.message || 'Error communicating with scanning server';
     stopPolling();
+    viewMode.value = 'landing';
   }
 }
 
-async function run(target) {
+async function onSubmit() {
   error.value = '';
+  isDemoMode.value = false;
   scan.value = null;
   isRunning.value = true;
+  viewMode.value = 'progress';
+
   try {
-    const { scanId } = await startScan(target);
+    const { scanId } = await startScan(url.value);
     await poll(scanId);
   } catch (err) {
-    error.value = err.message;
+    error.value = err.message || 'Failed to initiate scan';
     stopPolling();
+    viewMode.value = 'landing';
   }
 }
 
@@ -93,12 +91,44 @@ async function onRevert() {
   }
 }
 
-onUnmounted(() => clearTimeout(pollTimer));
+function handleExploreDemo() {
+  error.value = '';
+  stopPolling();
+  isDemoMode.value = true;
+  scan.value = JSON.parse(JSON.stringify(DEMO_SCAN_RESULT));
+  viewMode.value = 'workspace';
+  activeTab.value = 'overview';
+  // Pre-select first issue for insights panel showcase
+  if (scan.value.issues?.length > 0) {
+    selectedIssue.value = scan.value.issues[0];
+    isInsightPanelOpen.value = true;
+  }
+}
+
+function handleSelectIssue(issue) {
+  selectedIssue.value = issue;
+  isInsightPanelOpen.value = true;
+}
+
+function handleInspectInStudio(issue) {
+  selectedIssue.value = issue;
+  activeTab.value = 'studio';
+  isInsightPanelOpen.value = false;
+}
+
+function handleNewScan() {
+  stopPolling();
+  viewMode.value = 'landing';
+  scan.value = null;
+  error.value = '';
+}
+
+onUnmounted(() => stopPolling());
 </script>
 
 <template>
-  <form class="card scan-form" @submit.prevent="run({ url })">
-    <label for="scan-url">Public website URL</label>
+  <form class="card scan-form" @submit.prevent="onSubmit">
+    <label for="scan-url">Website URL</label>
     <div class="scan-form-row">
       <input
         id="scan-url"
@@ -112,20 +142,7 @@ onUnmounted(() => clearTimeout(pollTimer));
         {{ isRunning ? 'Scanning…' : 'Scan' }}
       </button>
     </div>
-    <p class="issue-meta">
-      <button type="button" class="link-button" :disabled="isRunning" @click="run({ demo: true })">
-        Scan the bundled demo page instead
-      </button>
-    </p>
   </form>
-
-  <section class="card" aria-labelledby="scope-heading">
-    <h2 id="scope-heading">What this scan covers</h2>
-    <p>
-      This scan has limited scope. It covers screen-reader names and alternatives, colour and contrast, and motion
-      only. It gives no overall score, and it is not a WCAG certification or a claim that a page is accessible.
-    </p>
-  </section>
 
   <p v-if="error" class="error" role="alert">{{ error }}</p>
 
@@ -145,41 +162,152 @@ onUnmounted(() => clearTimeout(pollTimer));
           {{ STATUS_LABELS[stage] }}
         </li>
       </ol>
-      <p v-if="scan.status === 'failed'" class="error" role="alert">Scan failed: {{ scan.error }}</p>
     </section>
 
-    <IntegrationStatus :integrations="scan.integrations" />
+    <SandboxLog :events="scan.sandboxEvents" />
 
     <template v-if="scan.status === 'done'">
-      <IssueList :findings="scan.findings" :reduced-motion-query="scan.reducedMotionQuery" />
-
-      <section v-if="scan.simulation" class="card" aria-labelledby="simulation-heading">
-        <h2 id="simulation-heading">Colour-vision simulation</h2>
-        <p>
-          A {{ scan.simulation }} simulation to help a person review colour-only findings. It is a viewing aid, not a
-          fix.
-        </p>
-        <img
-          class="screenshot"
-          :src="imageUrl(scan.scanId, 'simulation.jpg')"
-          :alt="`The scanned page with a ${scan.simulation} simulation applied`"
-        />
-      </section>
-
-      <AdjustmentPicker
-        :adjustments="scan.adjustments"
-        :findings="scan.findings"
-        :busy="previewBusy"
-        @preview="onPreview"
-      />
-      <BeforeAfter
-        v-if="scan.preview"
-        :scan-id="scan.scanId"
-        :preview="scan.preview"
-        @revert="onRevert"
-      />
+      <ScoreRadar :before="scan.scoresBefore" :after="scan.scoresAfter" />
+      <IssueList :issues="scan.issues" />
+      <BeforeAfter />
+      <IssueGraph />
     </template>
-
-    <SandboxLog :events="scan.sandboxEvents" />
   </template>
 </template>
+
+<style scoped>
+.scan-view-root {
+  width: 100%;
+}
+
+/* Progress View */
+.progress-page {
+  max-width: 840px;
+  margin: 48px auto;
+  padding: 0 var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.progress-card {
+  text-align: center;
+  padding: 36px;
+}
+
+.progress-title {
+  font-size: 1.6rem;
+  margin: 12px 0 6px;
+}
+
+.progress-url {
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  margin-bottom: 24px;
+}
+
+.progress-bar-container {
+  height: 8px;
+  background: var(--color-surface-sunken);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 32px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--cat-screen-reader);
+  transition: width 0.4s ease;
+}
+
+.steps-list {
+  display: flex;
+  justify-content: space-between;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.step-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 110px;
+}
+
+.step-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  border: 2px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-muted);
+}
+
+.step-item.completed .step-icon-box {
+  background: #dcfce7;
+  border-color: #22c55e;
+  color: #166534;
+}
+
+.step-item.active .step-icon-box {
+  background: var(--cat-screen-reader);
+  border-color: var(--cat-screen-reader);
+  color: #ffffff;
+}
+
+.step-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.step-item.active .step-label {
+  color: var(--color-obsidian);
+  font-weight: 700;
+}
+
+.spinner-sm {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Three-Part Workspace Layout */
+.workspace-layout {
+  display: flex;
+  width: 100%;
+  min-height: calc(100vh - 68px);
+}
+
+.workspace-centre {
+  flex: 1;
+  padding: 32px var(--space-6);
+  max-width: 1200px;
+  margin: 0 auto;
+  overflow-y: auto;
+}
+
+@media (max-width: 1100px) {
+  .workspace-layout {
+    flex-direction: column;
+  }
+}
+</style>
