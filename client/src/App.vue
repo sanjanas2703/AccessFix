@@ -1,15 +1,75 @@
 <script setup>
+import { ref } from 'vue';
+import ExtensionBar from './components/ExtensionBar.vue';
+import SiteHeader from './components/SiteHeader.vue';
+import { isExtension } from './extension.js';
 import ScanView from './views/ScanView.vue';
+
+const scanViewRef = ref(null);
+const currentView = ref('landing');
+const suggestedUrl = ref('');
+
+function handleNavigate(view) {
+  currentView.value = view;
+  if (view === 'landing' && scanViewRef.value) {
+    scanViewRef.value.viewMode = 'landing';
+  } else if (view === 'workspace' && scanViewRef.value && scanViewRef.value.scan) {
+    scanViewRef.value.viewMode = 'workspace';
+  }
+}
+
+function handleNewScan() {
+  if (scanViewRef.value) {
+    scanViewRef.value.handleNewScan();
+  }
+}
 </script>
 
 <template>
-  <header class="app-header">
-    <h1>AccessFix</h1>
-    <p>Scan a website, fix its accessibility issues, and see the score change.</p>
-  </header>
-  <main>
-    <ScanView />
-  </main>
+  <div class="app-container">
+    <!-- Accessible Skip to Content Link -->
+    <a href="#main-content" class="skip-link">Skip to primary content</a>
+
+    <!-- Top Site Navigation Header -->
+    <SiteHeader
+      :current-view="currentView"
+      :has-active-scan="Boolean(scanViewRef?.scan)"
+      @navigate="handleNavigate"
+      @new-scan="handleNewScan"
+    />
+
+    <!-- Chrome Extension Bar (if running as extension) -->
+    <ExtensionBar v-if="isExtension" @use-url="suggestedUrl = $event" />
+
+    <!-- Main Content Area -->
+    <div id="main-content" class="site-main">
+      <ScanView ref="scanViewRef" :suggested-url="suggestedUrl" />
+    </div>
+
+    <!-- Editorial Product Footer -->
+    <footer class="site-footer" role="contentinfo">
+      <div class="footer-inner">
+        <div class="footer-left">
+          <div class="footer-brand">
+            <span class="footer-brand-name">AccessFix</span>
+            <span class="footer-tagline">— The web, without barriers.</span>
+          </div>
+          <p class="footer-copy">
+            AI-powered accessibility analysis, multi-cue contrast simulation, and deterministic reduced-motion adaptations.
+          </p>
+        </div>
+
+        <div class="footer-right">
+          <div class="footer-note-box">
+            <span class="footer-note-title">Conformance & Design Principles</span>
+            <p>
+              Built strictly in accordance with WCAG 2.1 Level AA recommendations, high-contrast typography, and OS-level <code>prefers-reduced-motion</code> compliance.
+            </p>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </div>
 </template>
 
 <style scoped>

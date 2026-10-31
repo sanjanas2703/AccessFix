@@ -1,40 +1,180 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { GROUP_LABELS, GROUPS } from '../groups.js';
 
 const props = defineProps({
-  issues: { type: Array, required: true },
+  issues: { type: Array, default: () => [] },
+  findings: { type: Array, default: () => [] },
+  selectedIssueId: { type: String, default: null },
 });
 
-const groupedFindings = computed(() =>
+const emit = defineEmits(['select-issue']);
+
+const searchQuery = ref('');
+const selectedSeverity = ref('all');
+const selectedStatus = ref('all');
+
+const rawIssues = computed(() => {
+  if (props.issues && props.issues.length > 0) return props.issues;
+  if (props.findings && props.findings.length > 0) {
+    const groupMap = { blind: 'blind', colour: 'colourblind', motion: 'cognitive' };
+    return props.findings.map((f, i) => ({
+      id: f.id || `f-${i + 1}`,
+      group: groupMap[f.area] || f.area || 'blind',
+      type: f.ruleId || f.findingType || 'accessibility-issue',
+      selector: f.selector || 'body',
+      component: f.component || (f.selector ? f.selector.split(' ')[0] : 'Element'),
+      page: f.page || '/',
+      wcag: f.guidance?.guidelines?.[0]?.id || '2.1',
+      severity: f.findingType === 'automated_violation' ? 'high' : 'medium',
+      description: f.summary || f.description || '',
+      fixed: false,
+      requiresManualReview: f.findingType !== 'automated_violation',
+      evidence: f.evidence || {},
+      guidance: f.guidance?.needs?.map((n) => n.description).join('. ') || '',
+      proposedFix: f.guidance?.needs?.[0]?.fixes?.[0]?.title || '',
+      aiExplanation: f.ai?.explanation || '',
+    }));
+  }
+  return [];
+});
+
+const filteredIssues = computed(() => {
+  return rawIssues.value.filter((issue) => {
+    if (selectedSeverity.value !== 'all' && issue.severity !== selectedSeverity.value) {
+      return false;
+    }
+    if (selectedStatus.value === 'fixed' && !issue.fixed) {
+      return false;
+    }
+    if (selectedStatus.value === 'open' && issue.fixed) {
+      return false;
+    }
+    if (selectedStatus.value === 'review' && !issue.requiresManualReview) {
+      return false;
+    }
+    if (searchQuery.value.trim()) {
+      const q = searchQuery.value.toLowerCase();
+      const matchText = `${issue.description} ${issue.selector} ${issue.component} ${issue.wcag}`.toLowerCase();
+      if (!matchText.includes(q)) return false;
+    }
+    return true;
+  });
+});
+
+const groupedIssues = computed(() =>
   GROUPS.map((group) => ({
     group,
-    label: GROUP_LABELS[group],
-    issues: props.issues.filter((issue) => issue.group === group),
-  })).filter((entry) => entry.issues.length > 0),
+    label: GROUP_LABELS[group] || group,
+    issues: filteredIssues.value.filter((issue) => issue.group === group),
+  })).filter((entry) => entry.issues.length > 0)
 );
 </script>
 
 <template>
-  <section class="card" aria-labelledby="issues-heading">
-    <h2 id="issues-heading">Issues ({{ issues.length }})</h2>
-    <div v-for="entry in groupedIssues" :key="entry.group" class="issue-group">
-      <h3>{{ entry.label }} ({{ entry.issues.length }})</h3>
-      <ul class="issue-list">
-        <li v-for="issue in entry.issues" :key="issue.id">
-          <p class="issue-title">
-            <span :class="['badge', `severity-${issue.severity}`]">{{ issue.severity }}</span>
-            <span :class="['badge', issue.fixed ? 'state-fixed' : 'state-open']">
-              {{ issue.fixed ? 'Fixed' : 'Not fixed' }}
+  <div class="audit-records-view" aria-labelledby="issues-heading">
+    <div class="records-header card-box">
+      <div>
+        <span class="badge badge-screen-reader">Full Diagnostic Catalog</span>
+        <h2 id="issues-heading" class="records-title">Accessibility Audit Records ({{ filteredIssues.length }})</h2>
+        <p class="records-sub">
+          Comprehensive inventory of detected barriers, WCAG 2.1 compliance tags, and verified remediation states.
+        </p>
+      </div>
+
+      <!-- Controls Row -->
+      <div class="filters-row">
+        <div class="search-box">
+          <input
+            v-model="searchQuery"
+            type="search"
+            placeholder="Search selector, WCAG, or keyword..."
+            class="filter-input"
+          />
+        </div>
+
+        <select v-model="selectedSeverity" class="filter-select">
+          <option value="all">All Severities</option>
+          <option value="high">High Severity</option>
+          <option value="medium">Medium Severity</option>
+          <option value="low">Low Severity</option>
+        </select>
+
+        <select v-model="selectedStatus" class="filter-select">
+          <option value="all">All Statuses</option>
+          <option value="open">Unresolved</option>
+          <option value="fixed">Automated Check Improved</option>
+          <option value="review">Manual Review Required</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Grouped Records List -->
+    <div class="issue-groups-container">
+      <div
+        v-for="entry in groupedIssues"
+        :key="entry.group"
+        class="issue-group-card card-box"
+      >
+        <div class="group-head">
+          <div class="group-left">
+            <span
+              class="badge"
+              :class="{
+                'badge-screen-reader': entry.group === 'blind',
+                'badge-colour-vision': entry.group === 'colourblind' || entry.group === 'colour',
+                'badge-motion': entry.group === 'cognitive' || entry.group === 'motor' || entry.group === 'motion',
+                'badge-severity-low': entry.group === 'deaf',
+              }"
+            >
+              {{ entry.group }}
             </span>
-          </p>
-          <p>{{ issue.description }}</p>
-          <p class="issue-meta">
-            {{ issue.component }} · {{ issue.page }} · WCAG {{ issue.wcag }} ·
-            <code>{{ issue.selector }}</code>
-          </p>
-        </li>
-      </ul>
+            <h3>{{ entry.label }}</h3>
+          </div>
+          <span class="group-count">{{ entry.issues.length }} findings</span>
+        </div>
+
+        <ul class="issues-list">
+          <li
+            v-for="issue in entry.issues"
+            :key="issue.id"
+            class="issue-row-item"
+            :class="{ selected: selectedIssueId === issue.id }"
+            @click="emit('select-issue', issue)"
+          >
+            <div class="row-status-badges">
+              <span class="badge" :class="`badge-severity-${issue.severity}`">{{ issue.severity }}</span>
+              <span class="badge" :class="issue.fixed ? 'badge-fixed' : 'badge-open'">
+                {{ issue.fixed ? 'Check Improved' : 'Unresolved' }}
+              </span>
+              <span v-if="issue.requiresManualReview" class="badge badge-severity-medium">
+                Review Needed
+              </span>
+            </div>
+
+            <div class="row-body">
+              <h4 class="issue-desc">{{ issue.description }}</h4>
+              <div class="row-meta">
+                <span>Component: <strong>{{ issue.component }}</strong></span>
+                <span>·</span>
+                <span>Route: <code>{{ issue.page }}</code></span>
+                <span>·</span>
+                <span>WCAG: <strong class="font-mono">{{ issue.wcag }}</strong></span>
+                <span>·</span>
+                <code class="selector-tag">{{ issue.selector }}</code>
+              </div>
+            </div>
+
+            <div class="row-action">
+              <button type="button" class="btn-inspect">Inspect →</button>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <div v-if="groupedIssues.length === 0" class="empty-state-card card-box">
+        <p>No accessibility records match the active filter criteria.</p>
+      </div>
     </div>
   </div>
 </template>
@@ -129,7 +269,7 @@ const groupedFindings = computed(() =>
 }
 
 .issues-list {
-  list-style: none;
+  list-style: medium;
   margin: 0;
   padding: 0;
   display: flex;
