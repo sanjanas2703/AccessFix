@@ -1,198 +1,141 @@
 // Teammate area: sandbox/scanners.
-// Everything here is a stub returning mock data. No Daytona calls are made.
+// Connects to the team's existing sandbox. This module never creates, stops or
+// deletes a sandbox, and only removes the temporary job folders it created.
+import { randomUUID } from 'node:crypto';
+import { readdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { Daytona } from '@daytonaio/sdk';
+import { rootDir } from '../env.js';
 
-const issue = (fields) => ({ fixed: false, ...fields });
+const APP_DIR = '/home/daytona/accessfix';
+const JOBS_DIR = '/tmp/accessfix';
+const SCRIPTS_DIR = path.join(rootDir, 'sandbox-scripts');
+const DEMO_PAGE = path.join(rootDir, 'demo-broken-site', 'index.html');
+const SCRIPT_TIMEOUT_SEC = 110;
+const SETUP_COMMAND = 'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --omit=dev --no-audit --no-fund';
+const SETUP_HINT = 'Run "npm run sandbox:setup" from the repo root.';
 
-// Built per call so each scan gets its own copies to mark as fixed.
-function mockScanIssues() {
-  return [
-    issue({
-      id: 'iss-blind-1',
-      type: 'image-alt',
-      selector: 'img.hero-banner',
-      component: 'HeroBanner',
-      page: '/',
-      wcag: '1.1.1',
-      group: 'blind',
-      severity: 'high',
-      description: 'Hero image has no alt text, so screen readers skip its meaning.',
-    }),
-    issue({
-      id: 'iss-blind-2',
-      type: 'button-name',
-      selector: 'button.icon-search',
-      component: 'SiteHeader',
-      page: '/',
-      wcag: '4.1.2',
-      group: 'blind',
-      severity: 'high',
-      description: 'Search button has only an icon and no accessible name.',
-    }),
-    issue({
-      id: 'iss-blind-3',
-      type: 'label',
-      selector: 'input#email',
-      component: 'ContactForm',
-      page: '/contact',
-      wcag: '1.3.1',
-      group: 'blind',
-      severity: 'medium',
-      description: 'Email field relies on placeholder text and has no label.',
-    }),
-    issue({
-      id: 'iss-motor-1',
-      type: 'keyboard-trap',
-      selector: 'div.modal-newsletter',
-      component: 'NewsletterModal',
-      page: '/',
-      wcag: '2.1.2',
-      group: 'motor',
-      severity: 'high',
-      description: 'Keyboard focus cannot leave the newsletter modal.',
-    }),
-    issue({
-      id: 'iss-motor-2',
-      type: 'focus-not-visible',
-      selector: 'a.nav-link',
-      component: 'SiteHeader',
-      page: '/',
-      wcag: '2.4.7',
-      group: 'motor',
-      severity: 'medium',
-      description: 'Navigation links show no visible focus indicator.',
-    }),
-    issue({
-      id: 'iss-motor-3',
-      type: 'target-size',
-      selector: 'a.social-icon',
-      component: 'SiteFooter',
-      page: '/',
-      wcag: '2.5.8',
-      group: 'motor',
-      severity: 'low',
-      description: 'Social links are 16x16px, below the 24x24px minimum target size.',
-    }),
-    issue({
-      id: 'iss-deaf-1',
-      type: 'video-no-captions',
-      selector: 'video#promo',
-      component: 'PromoVideo',
-      page: '/',
-      wcag: '1.2.2',
-      group: 'deaf',
-      severity: 'high',
-      description: 'Promo video has speech but no captions track.',
-    }),
-    issue({
-      id: 'iss-deaf-2',
-      type: 'audio-no-transcript',
-      selector: 'audio.podcast-player',
-      component: 'PodcastPlayer',
-      page: '/blog',
-      wcag: '1.2.1',
-      group: 'deaf',
-      severity: 'medium',
-      description: 'Podcast episode has no text transcript.',
-    }),
-    issue({
-      id: 'iss-cognitive-1',
-      type: 'autoplay-animation',
-      selector: 'div.carousel',
-      component: 'HeroCarousel',
-      page: '/',
-      wcag: '2.2.2',
-      group: 'cognitive',
-      severity: 'medium',
-      description: 'Carousel auto-advances with no pause control.',
-    }),
-    issue({
-      id: 'iss-cognitive-2',
-      type: 'document-title',
-      selector: 'head > title',
-      component: 'PageHead',
-      page: '/contact',
-      wcag: '2.4.2',
-      group: 'cognitive',
-      severity: 'low',
-      description: 'Page title is "Untitled", which does not describe the page.',
-    }),
-    issue({
-      id: 'iss-cognitive-3',
-      type: 'reading-level',
-      selector: 'main article',
-      component: 'ArticleBody',
-      page: '/blog',
-      wcag: '3.1.5',
-      group: 'cognitive',
-      severity: 'low',
-      description: 'Article text is written at a college reading level.',
-    }),
-  ];
+let client;
+
+function getClient() {
+  if (!process.env.DAYTONA_API_KEY || !process.env.DAYTONA_SANDBOX_ID) {
+    throw new Error('Daytona is not configured: set DAYTONA_API_KEY and DAYTONA_SANDBOX_ID in .env.');
+  }
+  client ??= new Daytona({ apiKey: process.env.DAYTONA_API_KEY });
+  return client;
 }
 
-function mockColorblindIssues() {
-  return [
-    issue({
-      id: 'iss-colourblind-1',
-      type: 'color-contrast',
-      selector: 'a.btn-primary',
-      component: 'CallToAction',
-      page: '/',
-      wcag: '1.4.3',
-      group: 'colourblind',
-      severity: 'high',
-      description: 'Button text contrast is 2.1:1, below the required 4.5:1.',
-    }),
-    issue({
-      id: 'iss-colourblind-2',
-      type: 'link-in-text-block',
-      selector: 'main p a',
-      component: 'ArticleBody',
-      page: '/blog',
-      wcag: '1.4.1',
-      group: 'colourblind',
-      severity: 'medium',
-      description: 'Inline links are distinguished from body text by colour alone.',
-    }),
-    issue({
-      id: 'iss-colourblind-3',
-      type: 'color-only-status',
-      selector: 'span.form-error',
-      component: 'ContactForm',
-      page: '/contact',
-      wcag: '1.4.1',
-      group: 'colourblind',
-      severity: 'medium',
-      description: 'Form errors are shown only by turning the field red.',
-    }),
-  ];
-}
-
-export async function createSandbox(url) {
-  // TODO: Create a real sandbox with the Daytona SDK using DAYTONA_API_KEY:
-  //   const daytona = new Daytona({ apiKey: process.env.DAYTONA_API_KEY });
-  //   const sandbox = await daytona.create();
-  // Then install Playwright in it and upload sandbox-scripts/.
-  return { id: `mock-sandbox-${Date.now()}`, url };
-}
-
-export async function runScript(sandbox, scriptName, args = {}) {
-  // TODO: Run sandbox-scripts/<scriptName> inside the sandbox with sandbox.url
-  // and args, then parse the JSON it prints. Fail the scan on a non-zero exit.
-  switch (scriptName) {
-    case 'scan.js':
-      return { issues: mockScanIssues() };
-    case 'colorblind.js':
-      return { issues: mockColorblindIssues(), screenshotPath: '/tmp/mock-homepage.png' };
-    case 'retest.js':
-      return { passedIssueIds: args.fixes.map((fix) => fix.issueId) };
-    default:
-      throw new Error(`Unknown sandbox script: ${scriptName}`);
+async function getSandbox() {
+  try {
+    return await getClient().get(process.env.DAYTONA_SANDBOX_ID);
+  } catch (err) {
+    if (err.message.startsWith('Daytona is not configured')) throw err;
+    throw new Error(`The Daytona sandbox is unavailable: ${err.message}`, { cause: err });
   }
 }
 
-export async function destroySandbox(sandbox) {
-  // TODO: Delete the real sandbox (sandbox.delete()). This must also run after
-  // failures so a crashed scan never leaves a sandbox running.
-  return { id: sandbox.id, destroyed: true };
+// Fails clearly rather than starting a shared sandbox behind a teammate's back.
+export async function connectSandbox() {
+  const sandbox = await getSandbox();
+  if (sandbox.state !== 'started') {
+    throw new Error(`The Daytona sandbox is ${sandbox.state ?? 'in an unknown state'}, not started. ${SETUP_HINT}`);
+  }
+  return sandbox;
+}
+
+async function isInstalled(sandbox) {
+  const { exitCode } = await sandbox.process.executeCommand(
+    `test -d ${APP_DIR}/node_modules/playwright && test -d ${APP_DIR}/node_modules/@axe-core/playwright`,
+  );
+  return exitCode === 0;
+}
+
+// Uploads the current scripts, so the sandbox cannot run a stale version.
+export async function syncScripts(sandbox) {
+  const entries = await readdir(SCRIPTS_DIR, { recursive: true, withFileTypes: true });
+  const files = entries.filter((entry) => entry.isFile() && !entry.parentPath.includes('node_modules'));
+  const uploads = await Promise.all(
+    files.map(async (entry) => {
+      const local = path.join(entry.parentPath, entry.name);
+      const relative = path.relative(SCRIPTS_DIR, local).split(path.sep).join('/');
+      return { source: await readFile(local), destination: `${APP_DIR}/${relative}` };
+    }),
+  );
+  await sandbox.process.executeCommand(`mkdir -p ${APP_DIR}/lib`);
+  await sandbox.fs.uploadFiles(uploads);
+
+  if (!(await isInstalled(sandbox))) {
+    throw new Error(`Playwright is not installed in the sandbox. ${SETUP_HINT}`);
+  }
+}
+
+// Runs one script in its own temp folder and always removes that folder.
+// `job` holds { url } or { demo: true } plus script-specific fields.
+export async function runScript(sandbox, scriptName, job, imageNames = []) {
+  const jobDir = `${JOBS_DIR}/${randomUUID()}`;
+  await sandbox.process.executeCommand(`mkdir -p ${jobDir}`);
+
+  try {
+    const { demo, ...payload } = job;
+    const uploads = [];
+    if (demo) {
+      payload.demoFile = `${jobDir}/demo.html`;
+      uploads.push({ source: await readFile(DEMO_PAGE), destination: payload.demoFile });
+    }
+    uploads.push({ source: Buffer.from(JSON.stringify(payload)), destination: `${jobDir}/job.json` });
+    await sandbox.fs.uploadFiles(uploads);
+
+    // Only generated names reach the shell. Page data stays in job.json.
+    const run = await sandbox.process.executeCommand(
+      `node ${scriptName} ${jobDir}`,
+      APP_DIR,
+      undefined,
+      SCRIPT_TIMEOUT_SEC,
+    );
+
+    let result;
+    try {
+      result = JSON.parse((await sandbox.fs.downloadFile(`${jobDir}/result.json`)).toString('utf8'));
+    } catch {
+      throw new Error(`${scriptName} produced no result (exit ${run.exitCode}): ${run.result.slice(-300)}`);
+    }
+    if (!result.ok) throw new Error(result.error);
+
+    const images = {};
+    for (const name of imageNames) {
+      images[name] = await sandbox.fs.downloadFile(`${jobDir}/${name}`);
+    }
+    return { result, images };
+  } finally {
+    await sandbox.fs.deleteFile(jobDir, true).catch((err) => {
+      console.error(`Could not remove ${jobDir}: ${err.message}`);
+    });
+  }
+}
+
+export async function getSandboxStatus() {
+  const sandbox = await getSandbox();
+  const started = sandbox.state === 'started';
+  return { state: sandbox.state, installed: started ? await isInstalled(sandbox) : null };
+}
+
+// Explicit, operator-run setup: starts the shared sandbox and installs into APP_DIR.
+export async function setupSandbox(log = () => {}) {
+  const sandbox = await getSandbox();
+  if (sandbox.state !== 'started') {
+    log(`Sandbox is ${sandbox.state}. Starting it...`);
+    await sandbox.start(120);
+  }
+  log('Uploading sandbox scripts...');
+  await sandbox.process.executeCommand(`mkdir -p ${APP_DIR}/lib`);
+  await syncScripts(sandbox).catch((err) => {
+    if (!err.message.startsWith('Playwright is not installed')) throw err;
+  });
+
+  log('Installing Playwright and axe-core (Chromium is already in the image)...');
+  const install = await sandbox.process.executeCommand(SETUP_COMMAND, APP_DIR, undefined, 300);
+  if (install.exitCode !== 0) {
+    throw new Error(`npm install failed in the sandbox: ${install.result.slice(-300)}`);
+  }
+  return sandbox;
 }

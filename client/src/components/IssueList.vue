@@ -3,7 +3,8 @@ import { computed, ref } from 'vue';
 import { GROUP_LABELS, GROUPS } from '../groups.js';
 
 const props = defineProps({
-  issues: { type: Array, required: true },
+  issues: { type: Array, default: () => [] },
+  findings: { type: Array, default: () => [] },
   selectedIssueId: { type: String, default: null },
 });
 
@@ -13,8 +14,33 @@ const searchQuery = ref('');
 const selectedSeverity = ref('all');
 const selectedStatus = ref('all');
 
+const rawIssues = computed(() => {
+  if (props.issues && props.issues.length > 0) return props.issues;
+  if (props.findings && props.findings.length > 0) {
+    const groupMap = { blind: 'blind', colour: 'colourblind', motion: 'cognitive' };
+    return props.findings.map((f, i) => ({
+      id: f.id || `f-${i + 1}`,
+      group: groupMap[f.area] || f.area || 'blind',
+      type: f.ruleId || f.findingType || 'accessibility-issue',
+      selector: f.selector || 'body',
+      component: f.component || (f.selector ? f.selector.split(' ')[0] : 'Element'),
+      page: f.page || '/',
+      wcag: f.guidance?.guidelines?.[0]?.id || '2.1',
+      severity: f.findingType === 'automated_violation' ? 'high' : 'medium',
+      description: f.summary || f.description || '',
+      fixed: false,
+      requiresManualReview: f.findingType !== 'automated_violation',
+      evidence: f.evidence || {},
+      guidance: f.guidance?.needs?.map((n) => n.description).join('. ') || '',
+      proposedFix: f.guidance?.needs?.[0]?.fixes?.[0]?.title || '',
+      aiExplanation: f.ai?.explanation || '',
+    }));
+  }
+  return [];
+});
+
 const filteredIssues = computed(() => {
-  return props.issues.filter((issue) => {
+  return rawIssues.value.filter((issue) => {
     if (selectedSeverity.value !== 'all' && issue.severity !== selectedSeverity.value) {
       return false;
     }
@@ -39,7 +65,7 @@ const filteredIssues = computed(() => {
 const groupedIssues = computed(() =>
   GROUPS.map((group) => ({
     group,
-    label: GROUP_LABELS[group],
+    label: GROUP_LABELS[group] || group,
     issues: filteredIssues.value.filter((issue) => issue.group === group),
   })).filter((entry) => entry.issues.length > 0)
 );
@@ -96,8 +122,8 @@ const groupedIssues = computed(() =>
               class="badge"
               :class="{
                 'badge-screen-reader': entry.group === 'blind',
-                'badge-colour-vision': entry.group === 'colourblind',
-                'badge-motion': entry.group === 'cognitive' || entry.group === 'motor',
+                'badge-colour-vision': entry.group === 'colourblind' || entry.group === 'colour',
+                'badge-motion': entry.group === 'cognitive' || entry.group === 'motor' || entry.group === 'motion',
                 'badge-severity-low': entry.group === 'deaf',
               }"
             >
@@ -243,7 +269,7 @@ const groupedIssues = computed(() =>
 }
 
 .issues-list {
-  list-style: none;
+  list-style: medium;
   margin: 0;
   padding: 0;
   display: flex;

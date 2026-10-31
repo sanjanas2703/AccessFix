@@ -277,44 +277,40 @@ code, pre, kbd, samp {
   border-color: var(--color-border);
 }
 
-.badge-fixed {
-  background-color: var(--color-success-bg);
-  color: var(--color-success);
-  border-color: #bbf7d0;
+.severity-high {
+  color: var(--danger);
 }
 
-.badge-open {
-  background-color: var(--color-surface-sunken);
-  color: var(--color-charcoal);
-  border-color: var(--color-border);
+.severity-medium {
+  color: #92400e;
 }
 
-/* Card Surface */
-.card-box {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-6);
-  box-shadow: var(--shadow-sm);
+.severity-low {
+  color: var(--muted);
 }
 
-/* Responsive Utilities */
-@media (max-width: 768px) {
-  :root {
-    --space-6: 16px;
-    --space-8: 24px;
-    --space-12: 32px;
-  }
+.state-fixed {
+  color: var(--good);
 }
 
-/* Reduced Motion Mode Support */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+.state-open {
+  color: var(--ink);
+}
+
+/* Placeholders */
+.placeholder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  padding: 16px;
+  color: var(--muted);
+  border: 2px dashed var(--border);
+  border-radius: 6px;
 }

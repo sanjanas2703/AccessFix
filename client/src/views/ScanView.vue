@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onUnmounted, ref } from 'vue';
-import { getScan, startScan } from '../api.js';
+import { computed, onUnmounted, ref, watch } from 'vue';
+import { clearPreview, getScan, startPreview, startScan } from '../api.js';
 import { DEMO_SCAN_RESULT } from '../demoData.js';
 
 // Component Imports
@@ -17,11 +17,18 @@ import IssueGraph from '../components/IssueGraph.vue';
 import IssueList from '../components/IssueList.vue';
 import SandboxLog from '../components/SandboxLog.vue';
 
+const props = defineProps({
+  suggestedUrl: { type: String, default: '' },
+});
+
 const POLL_MS = 1000;
-const STAGES = ['queued', 'scanning', 'patching', 'retesting', 'done'];
+const STAGES = ['queued', 'connecting', 'scanning', 'retrieving', 'explaining', 'done'];
 const STAGE_LABELS = {
   queued: 'Provisioning Daytona Sandbox',
+  connecting: 'Connecting to Sandbox',
   scanning: 'Capturing DOM & Contrast Evidence',
+  retrieving: 'Querying Neo4j Accessibility Graph',
+  explaining: 'Synthesizing Guidance via Nosana AI',
   patching: 'Synthesizing Fixes via AI',
   retesting: 'Validating Patch in Re-test Sandbox',
   done: 'Analysis & Transformation Ready',
@@ -40,8 +47,41 @@ const isInsightPanelOpen = ref(false);
 
 let pollTimer = null;
 
-const stageIndex = computed(() => STAGES.indexOf(scan.value?.status));
-const currentStageLabel = computed(() => STAGE_LABELS[scan.value?.status] ?? scan.value?.status ?? '');
+const stageIndex = computed(() => {
+  const current = scan.value?.status;
+  const idx = STAGES.indexOf(current);
+  return idx >= 0 ? idx : 0;
+});
+
+const currentStageLabel = computed(() => {
+  const s = scan.value?.status;
+  return STAGE_LABELS[s] ?? s ?? 'Analyzing';
+});
+
+function adaptScan(s) {
+  if (!s) return s;
+  if (!s.issues && Array.isArray(s.findings)) {
+    const groupMap = { blind: 'blind', colour: 'colourblind', motion: 'cognitive' };
+    s.issues = s.findings.map((f, i) => ({
+      id: f.id || `f-${i + 1}`,
+      group: groupMap[f.area] || f.area || 'blind',
+      type: f.ruleId || f.findingType || 'accessibility-barrier',
+      selector: f.selector || 'body',
+      component: f.component || (f.selector ? f.selector.split(' ')[0] : 'Element'),
+      page: f.page || '/',
+      wcag: f.guidance?.guidelines?.[0]?.id || '2.1',
+      severity: f.findingType === 'automated_violation' ? 'high' : 'medium',
+      description: f.summary || f.description || '',
+      fixed: Boolean(f.fixed),
+      requiresManualReview: f.findingType !== 'automated_violation',
+      evidence: f.evidence || {},
+      guidance: f.guidance?.needs?.map((n) => n.description).join('. ') || '',
+      proposedFix: f.guidance?.needs?.[0]?.fixes?.[0]?.title || '',
+      aiExplanation: f.ai?.explanation || '',
+    }));
+  }
+  return s;
+}
 
 function stopPolling() {
   if (pollTimer) {
@@ -53,12 +93,16 @@ function stopPolling() {
 
 async function poll(scanId) {
   try {
-    scan.value = await getScan(scanId);
+    const res = await getScan(scanId);
+    scan.value = adaptScan(res);
     if (['done', 'failed'].includes(scan.value?.status)) {
       stopPolling();
       if (scan.value?.status === 'done') {
         viewMode.value = 'workspace';
         activeTab.value = 'overview';
+        if (scan.value.issues?.length > 0) {
+          selectedIssue.value = scan.value.issues[0];
+        }
       }
       return;
     }
@@ -70,7 +114,7 @@ async function poll(scanId) {
   }
 }
 
-async function handleUrlSubmit(url) {
+async function runScan(target) {
   error.value = '';
   isDemoMode.value = false;
   scan.value = null;
@@ -78,13 +122,18 @@ async function handleUrlSubmit(url) {
   viewMode.value = 'progress';
 
   try {
-    const { scanId } = await startScan(url);
+    const payload = typeof target === 'string' ? { url: target } : target;
+    const { scanId } = await startScan(payload);
     await poll(scanId);
   } catch (err) {
     error.value = err.message || 'Failed to initiate scan';
     stopPolling();
     viewMode.value = 'landing';
   }
+}
+
+function handleUrlSubmit(url) {
+  runScan({ url });
 }
 
 function handleExploreDemo() {
@@ -94,7 +143,6 @@ function handleExploreDemo() {
   scan.value = JSON.parse(JSON.stringify(DEMO_SCAN_RESULT));
   viewMode.value = 'workspace';
   activeTab.value = 'overview';
-  // Pre-select first issue for insights panel showcase
   if (scan.value.issues?.length > 0) {
     selectedIssue.value = scan.value.issues[0];
     isInsightPanelOpen.value = true;
@@ -119,7 +167,45 @@ function handleNewScan() {
   error.value = '';
 }
 
+async function onPreview(adjustmentIds) {
+  if (!scan.value?.scanId) return;
+  error.value = '';
+  try {
+    await startPreview(scan.value.scanId, adjustmentIds);
+    await poll(scan.value.scanId);
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+async function onRevert() {
+  if (!scan.value?.scanId) return;
+  error.value = '';
+  try {
+    await clearPreview(scan.value.scanId);
+    const res = await getScan(scan.value.scanId);
+    scan.value = adaptScan(res);
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+watch(
+  () => props.suggestedUrl,
+  (val) => {
+    if (val && viewMode.value === 'landing') {
+      handleUrlSubmit(val);
+    }
+  },
+);
+
 onUnmounted(() => stopPolling());
+
+defineExpose({
+  scan,
+  viewMode,
+  handleNewScan,
+});
 </script>
 
 <template>
@@ -170,7 +256,7 @@ onUnmounted(() => stopPolling());
                 <span v-else-if="idx === stageIndex" class="spinner-sm" aria-hidden="true"></span>
                 <span v-else>{{ idx + 1 }}</span>
               </div>
-              <span class="step-label">{{ STAGE_LABELS[stage] }}</span>
+              <span class="step-label">{{ STAGE_LABELS[stage] || stage }}</span>
             </li>
           </ol>
         </div>
@@ -191,7 +277,7 @@ onUnmounted(() => stopPolling());
           :scan="scan"
           :active-tab="activeTab"
           :is-demo-mode="isDemoMode"
-          @select-tab="(tab) => activeTab = tab"
+          @select-tab="(tab) => (activeTab = tab)"
           @new-scan="handleNewScan"
         />
 
@@ -201,14 +287,14 @@ onUnmounted(() => stopPolling());
           <ExecutiveOverview
             v-if="activeTab === 'overview'"
             :scan="scan"
-            @navigate-category="(cat) => activeTab = cat"
+            @navigate-category="(cat) => (activeTab = cat)"
             @select-issue="handleSelectIssue"
           />
 
           <!-- Perspective: Screen Reader -->
           <ScreenReaderExplorer
             v-else-if="activeTab === 'screen-reader'"
-            :issues="scan.issues"
+            :issues="scan.issues || []"
             :selected-issue-id="selectedIssue?.id"
             @select-issue="handleSelectIssue"
           />
@@ -216,7 +302,7 @@ onUnmounted(() => stopPolling());
           <!-- Perspective: Colour Vision -->
           <ContrastLab
             v-else-if="activeTab === 'colour-vision'"
-            :issues="scan.issues"
+            :issues="scan.issues || []"
             :selected-issue-id="selectedIssue?.id"
             @select-issue="handleSelectIssue"
           />
@@ -224,7 +310,7 @@ onUnmounted(() => stopPolling());
           <!-- Perspective: Motion Sensitivity -->
           <MotionInventory
             v-else-if="activeTab === 'motion'"
-            :issues="scan.issues"
+            :issues="scan.issues || []"
             :selected-issue-id="selectedIssue?.id"
             @select-issue="handleSelectIssue"
           />
@@ -240,14 +326,14 @@ onUnmounted(() => stopPolling());
           <!-- Perspective: Neo4j Component Graph -->
           <IssueGraph
             v-else-if="activeTab === 'graph'"
-            :issues="scan.issues"
+            :issues="scan.issues || []"
             @select-issue="handleSelectIssue"
           />
 
           <!-- Perspective: All Issues Catalog -->
           <IssueList
             v-else-if="activeTab === 'issues'"
-            :issues="scan.issues"
+            :issues="scan.issues || []"
             :selected-issue-id="selectedIssue?.id"
             @select-issue="handleSelectIssue"
           />
@@ -255,7 +341,7 @@ onUnmounted(() => stopPolling());
           <!-- Perspective: Daytona Sandbox Log -->
           <SandboxLog
             v-else-if="activeTab === 'sandbox'"
-            :events="scan.sandboxEvents"
+            :events="scan.sandboxEvents || []"
           />
         </main>
 
@@ -384,7 +470,9 @@ onUnmounted(() => stopPolling());
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Three-Part Workspace Layout */

@@ -1,16 +1,17 @@
 <script setup>
 import { ref } from 'vue';
+import ExtensionBar from './components/ExtensionBar.vue';
 import SiteHeader from './components/SiteHeader.vue';
+import { isExtension } from './extension.js';
 import ScanView from './views/ScanView.vue';
 
 const scanViewRef = ref(null);
 const currentView = ref('landing');
-const hasActiveScan = ref(false);
+const suggestedUrl = ref('');
 
 function handleNavigate(view) {
   currentView.value = view;
   if (view === 'landing' && scanViewRef.value) {
-    // If user clicks "How it works" or logo, navigate to landing
     scanViewRef.value.viewMode = 'landing';
   } else if (view === 'workspace' && scanViewRef.value && scanViewRef.value.scan) {
     scanViewRef.value.viewMode = 'workspace';
@@ -37,9 +38,12 @@ function handleNewScan() {
       @new-scan="handleNewScan"
     />
 
+    <!-- Chrome Extension Bar (if running as extension) -->
+    <ExtensionBar v-if="isExtension" @use-url="suggestedUrl = $event" />
+
     <!-- Main Content Area -->
     <div id="main-content" class="site-main">
-      <ScanView ref="scanViewRef" />
+      <ScanView ref="scanViewRef" :suggested-url="suggestedUrl" />
     </div>
 
     <!-- Editorial Product Footer -->

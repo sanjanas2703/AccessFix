@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "build:extension": "vite build --mode extension"
   },
   "dependencies": {
     "chart.js": "^4.6.1",

@@ -1,41 +1,14 @@
-// Runs INSIDE the Daytona sandbox: node scan.js <url>
-// Prints { issues: [...] } as JSON, using the shared issue shape.
+// Runs INSIDE the Daytona sandbox: node scan.js <jobDir>
+// Reads job.json, writes result.json and before.jpg to jobDir.
+import path from 'node:path';
+import { screenshot, withPage } from './lib/browser.js';
+import { runAllChecks } from './lib/checks.js';
+import { runJob } from './lib/job.js';
 
-async function runAxeScan(page) {
-  // TODO: Run AxeBuilder from @axe-core/playwright on the page and map each
-  // violation node to an issue. Use group "blind" for screen reader rules.
-  return [];
-}
-
-async function runKeyboardTabThrough(page) {
-  // TODO: Press Tab through the page and record the focused element each step.
-  // Report keyboard traps, missing focus indicators and unreachable controls
-  // as group "motor".
-  return [];
-}
-
-async function detectMediaAndAnimation(page) {
-  // TODO: Find <video> without caption tracks and <audio> without transcripts
-  // (group "deaf"), plus autoplaying or moving content (group "cognitive").
-  return [];
-}
-
-async function main() {
-  const url = process.argv[2];
-
-  // TODO: Launch Chromium with Playwright, open `url`, and close it when done.
-  const page = null;
-
-  const issues = [
-    ...(await runAxeScan(page)),
-    ...(await runKeyboardTabThrough(page)),
-    ...(await detectMediaAndAnimation(page)),
-  ];
-
-  console.log(JSON.stringify({ url, issues }));
-}
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+await runJob(async (job, jobDir) =>
+  withPage(job, async (page, { url, blockedRequests }) => {
+    await screenshot(page, path.join(jobDir, 'before.jpg'));
+    const checks = await runAllChecks(page);
+    return { finalUrl: url, title: (await page.title()).slice(0, 200), blockedRequests, ...checks };
+  }),
+);
