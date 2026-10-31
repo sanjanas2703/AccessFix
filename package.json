@@ -8,7 +8,12 @@
   ],
   "scripts": {
     "dev": "concurrently --names server,client --prefix-colors blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
-    "build": "npm run build -w client"
+    "build": "npm run build -w client",
+    "build:extension": "npm run build:extension -w client",
+    "test": "npm test -w server",
+    "seed": "npm run seed -w server",
+    "sandbox:setup": "npm run sandbox:setup -w server",
+    "check:services": "npm run check:services -w server"
   },
   "devDependencies": {
     "concurrently": "^10.0.6"

@@ -1,37 +1,17 @@
-// Runs INSIDE the Daytona sandbox: node colorblind.js <url>
-// Prints { issues: [...], screenshotPath: "..." } as JSON.
+// Runs INSIDE the Daytona sandbox: node colorblind.js <jobDir>
+// Writes a colour-vision simulation screenshot, so a person can review the
+// colour-only findings. It is a viewing aid: it does not fix or prove anything.
+import path from 'node:path';
+import { screenshot, withPage } from './lib/browser.js';
+import { runJob } from './lib/job.js';
 
-const SIMULATIONS = ['protanopia', 'deuteranopia', 'tritanopia', 'low-vision'];
+const SIMULATION = 'deuteranopia';
 
-async function simulateColorVision(page, simulation) {
-  // TODO: Apply the simulation (CDP Emulation.setEmulatedVisionDeficiency, or a
-  // CSS filter) and save a screenshot for this simulation.
-  return null;
-}
-
-async function findColorOnlyIssues(page) {
-  // TODO: Compare results across simulations to find information conveyed by
-  // colour alone or lost contrast. Report them as group "colourblind".
-  return [];
-}
-
-async function main() {
-  const url = process.argv[2];
-
-  // TODO: Launch Chromium with Playwright, open `url`, and close it when done.
-  const page = null;
-
-  const screenshots = [];
-  for (const simulation of SIMULATIONS) {
-    screenshots.push(await simulateColorVision(page, simulation));
-  }
-  const issues = await findColorOnlyIssues(page);
-
-  // TODO: Return the screenshot that should go to server/services/vision.js.
-  console.log(JSON.stringify({ url, issues, screenshotPath: screenshots[0] }));
-}
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+await runJob(async (job, jobDir) =>
+  withPage(job, async (page) => {
+    const session = await page.context().newCDPSession(page);
+    await session.send('Emulation.setEmulatedVisionDeficiency', { type: SIMULATION });
+    await screenshot(page, path.join(jobDir, 'simulation.jpg'));
+    return { simulation: SIMULATION };
+  }),
+);

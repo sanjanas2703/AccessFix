@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch-path=. index.js",
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test",
+    "seed": "node scripts/seed-neo4j.js",
+    "sandbox:setup": "node scripts/sandbox-setup.js",
+    "check:services": "node scripts/check-services.js"
   },
   "dependencies": {
     "@daytonaio/sdk": "^0.227.0",

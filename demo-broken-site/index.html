@@ -4,10 +4,82 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Demo Site</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 760px; margin: 0 auto; padding: 16px; }
+      .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+      .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+      .dot.success { background: #2e8b2e; }
+      .dot.error { background: #c0392b; }
+      input { border: 2px solid #777; padding: 6px; }
+      input.error { border-color: #c0392b; }
+      .faint { color: #b5b5b5; }
+      .sale { color: #ffffff; background: #f0a040; padding: 4px 8px; }
+      .spinner { width: 32px; height: 32px; background: #1d4ed8; animation: spin 1.5s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .ticker { position: relative; height: 24px; overflow: hidden; }
+      #ticker-text { position: absolute; white-space: nowrap; }
+    </style>
   </head>
   <body>
-    <!-- TODO: Plant one accessibility issue per disability group for the demo. -->
     <h1>Demo Site</h1>
-    <p>Placeholder page for the AccessFix demo.</p>
+    <p>A controlled page with known accessibility issues for the AccessFix demo.</p>
+
+    <h2>Screen reader</h2>
+    <!-- button-name: no accessible name and no context. The meaning must not be guessed. -->
+    <button id="mystery-button"><svg width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7" /></svg></button>
+    <!-- link-name: an icon-only link. -->
+    <a id="icon-link" href="#account"><svg width="16" height="16" aria-hidden="true"><rect width="16" height="16" /></svg></a>
+    <!-- image-alt: no alt. A description must not be invented. -->
+    <img id="hero" width="120" height="80" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%23789'/%3E%3C/svg%3E" />
+    <!-- Passes axe, but the name is not useful. -->
+    <img id="generic-alt" alt="image" width="40" height="40" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='%23987'/%3E%3C/svg%3E" />
+
+    <!-- label: the adjacent label is not associated, so its text is reliable context. -->
+    <div class="row">
+      <label>Email address</label>
+      <input id="email" type="email" class="error" />
+    </div>
+    <!-- label: no context at all, so this stays a review item. -->
+    <div class="row">
+      <input id="unknown-field" type="text" />
+    </div>
+
+    <h2>Colour</h2>
+    <!-- color-contrast: both are measurable. -->
+    <p id="faint-text" class="faint">This text has low contrast against the page.</p>
+    <p><span id="sale-badge" class="sale">Sale ends soon</span></p>
+    <!-- Colour-only status. Class names give the meaning, so labels can be offered. -->
+    <ul>
+      <li class="row"><span class="dot success"></span> Payments service</li>
+      <li class="row"><span class="dot error"></span> Email service</li>
+    </ul>
+
+    <h2>Motion</h2>
+    <!-- CSS animation: reduced-motion should stop this. -->
+    <div class="spinner" id="spinner"></div>
+    <!-- Script-driven movement: CSS adjustments cannot stop this. -->
+    <div class="ticker"><span id="ticker-text">Latest news scrolls past here</span></div>
+    <!-- Canvas animation: CSS adjustments cannot stop this. -->
+    <canvas id="bounce" width="120" height="40" aria-hidden="true"></canvas>
+
+    <script>
+      const ticker = document.getElementById('ticker-text');
+      let offset = 0;
+      setInterval(() => {
+        offset = (offset + 4) % 300;
+        ticker.style.left = `${offset}px`;
+      }, 50);
+
+      const canvas = document.getElementById('bounce');
+      const context = canvas.getContext('2d');
+      let frame = 0;
+      function draw() {
+        frame += 1;
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.fillRect(frame % canvas.width, 10, 20, 20);
+        requestAnimationFrame(draw);
+      }
+      draw();
+    </script>
   </body>
 </html>
