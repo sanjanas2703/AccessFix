@@ -1,0 +1,11 @@
+{
+  "name": "accessfix-sandbox-scripts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runs inside the Daytona sandbox. Deliberately not an npm workspace, so Playwright is not installed locally.",
+  "type": "module",
+  "dependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "playwright": "^1.64.1"
+  }
+}
